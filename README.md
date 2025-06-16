@@ -82,7 +82,3 @@ Experience and test the complete circuit and code in your browser using Tinkerca
 UltrasonicBot is a compact, effective platform for exploring the fundamentals of mobile robots with obstacle detection. Its simple build and concise code make it ideal for introductory robotics projects and educational workshops.
 
 ---
-
-> **Author:** Your Name  
-> **Date:** June 2025  
-> **License:** MIT  
