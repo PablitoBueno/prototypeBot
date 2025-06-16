@@ -24,22 +24,39 @@ This platform serves as a hands‑on tutorial for beginners in robotics and embe
 | 9 V battery (snap‑on)      | 2        | VIN              |
 | Jumper wires & protoboard  | —        | —                |
 
-1. **Distance measurement**  
-   - Emit a 10 µs pulse on the signal pin.  
-   - Measure echo duration with `pulseIn(sigPin, HIGH, 30000)`.  
-   - Convert to centimeters:  
-     \[
-       d = \frac{v_{\text{sound}} \times t}{2}, \quad v_{\text{sound}} \approx 0.034\ \mathrm{cm/µs}
-     \]
+### 2.1 Connection Mapping
 
-2. **Drive control**  
-   - Motors 1 & 3: forward when `Pin1=HIGH, Pin2=LOW`.  
-   - Motors 2 & 4: reverse direction to achieve straight motion.
-
-3. **LCD feedback**  
-   - Display “Moving” if distance > 20 cm.  
-   - Display “Stopped” otherwise.  
-   - Clear and center text for readability.
+| Device                    | Arduino Pin | Driver / Note            |
+|---------------------------|-------------|--------------------------|
+| **Ultrasonic Sensor**     |             |                          |
+| – Signal (Trig/Echo)      | D10         | Single‑pin 3‑pin sensor  |
+| – VCC                     | 5V          |                          |
+| – GND                     | GND         |                          |
+| **LCD 16×2**              |             |                          |
+| – RS                       | A0         |                          |
+| – E                        | A1         |                          |
+| – D4                       | A2         |                          |
+| – D5                       | A3         |                          |
+| – D6                       | A4         |                          |
+| – D7                       | A5         |                          |
+| – VCC                      | 5V         |                          |
+| – GND                      | GND        |                          |
+| **L293D Motor Driver 1**  |             | Controls motors 1 & 2    |
+| – Input1                  | D2          | Motor1 Pin1              |
+| – Input2                  | D3          | Motor1 Pin2              |
+| – Input3                  | D4          | Motor2 Pin1              |
+| – Input4                  | D5          | Motor2 Pin2              |
+| – VCC1                    | 5V          | Logic power              |
+| – VCC2                    | Battery     | Motor power              |
+| – GND                     | GND         |                          |
+| **L293D Motor Driver 2**  |             | Controls motors 3 & 4    |
+| – Input1                  | D6          | Motor3 Pin1              |
+| – Input2                  | D7          | Motor3 Pin2              |
+| – Input3                  | D8          | Motor4 Pin1              |
+| – Input4                  | D9          | Motor4 Pin2              |
+| – VCC1                    | 5V          | Logic power              |
+| – VCC2                    | Battery     | Motor power              |
+| – GND                     | GND         |                          |
 
 ## 3. Expected Performance
 - **Autonomous navigation** on flat surfaces, avoiding static obstacles.  
@@ -65,3 +82,7 @@ Experience and test the complete circuit and code in your browser using Tinkerca
 UltrasonicBot is a compact, effective platform for exploring the fundamentals of mobile robots with obstacle detection. Its simple build and concise code make it ideal for introductory robotics projects and educational workshops.
 
 ---
+
+> **Author:** Your Name  
+> **Date:** June 2025  
+> **License:** MIT  
