@@ -1,84 +1,127 @@
-# UltrasonicBot: Obstacle-Avoidance Mobile Robot with LCD Feedback
+# UltrasonicBot: Advanced Obstacle-Avoidance Mobile Robot with IR Control and Dual Ultrasonic Sensors
 
 ## Abstract
-This project introduces **UltrasonicBot**, a four‑wheeled Arduino UNO–based robot that uses a 3‑pin ultrasonic sensor for obstacle detection and a 16×2 LCD for real‑time status feedback. When an object comes within 20 cm, the robot stops, displays “Stopped” on the LCD, and waits until the path is clear to resume motion.
 
-## 1. Introduction
-Autonomous obstacle avoidance is a core capability for mobile robots. UltrasonicBot demonstrates fundamental concepts in:
+**UltrasonicBot** is an Arduino UNO–based four-wheeled mobile robot featuring:
 
-- **Signal acquisition** with a single‑pin ultrasonic sensor (trigger & echo).  
-- **DC motor control** via L293D drivers and four independent wheels.  
-- **Human–machine interface** through an LCD displaying “Moving” or “Stopped.”  
+- **Dual ultrasonic sensors** (front & rear) for obstacle detection.
+- **Infrared (IR) remote control** for switching between _AUTO_ and _MANUAL_ modes and direct navigation commands.
+- **16×2 LCD display** for real-time status, sensor readings, and diagnostics.
+- **Front and rear LEDs** acting as headlights and taillights.
+- **L293D motor drivers** controlling four independent DC gear motors.
+- **Adaptive state machine** with automatic escape logic using memory of past actions.
 
-This platform serves as a hands‑on tutorial for beginners in robotics and embedded systems.
+## Dependencies
 
-## 2. Materials and Methods
+- Arduino IDE (≥ 1.8.13)
+- Libraries:
+  - `LiquidCrystal`
+  - `IRremote`
 
-| Component                  | Quantity | Arduino Pin(s)   |
-|----------------------------|----------|------------------|
-| Arduino UNO                | 1        | —                |
-| Ultrasonic sensor (3‑pin)  | 1        | D10              |
-| L293D motor driver IC      | 2        | D2–D9            |
-| DC gear motors (130 RPM)   | 4        | via L293D        |
-| LCD 16×2                   | 1        | A0–A5            |
-| 9 V battery (snap‑on)      | 2        | VIN              |
-| Jumper wires & protoboard  | —        | —                |
+## Pin Configuration
 
-### 2.1 Connection Mapping
+| Device                          | Arduino Pin | Notes                                      |
+| ------------------------------- | ----------- | ------------------------------------------ |
+| **Motors (via L293D drivers)**  |             |                                            |
+| Motor 1 (front-left) - IN1      | 2           | PWM forward/backward                      |
+| Motor 1 - IN2                   | 3           |                                            |
+| Motor 2 (front-right) - IN1     | 4           |                                            |
+| Motor 2 - IN2                   | 5           |                                            |
+| Motor 3 (rear-left) - IN1       | 6           |                                            |
+| Motor 3 - IN2                   | 7           |                                            |
+| Motor 4 (rear-right) - IN1      | 8           |                                            |
+| Motor 4 - IN2                   | 9           |                                            |
+| **Ultrasonic Sensors**          |             |                                            |
+| Front Sensor (Trig/Echo)        | 10          | Single pin (combined trigger/echo)        |
+| Rear Sensor (Trig/Echo)         | 11          | Single pin (combined trigger/echo)        |
+| **IR Receiver**                 | 12          | Receives IR commands                      |
+| **Front LED (Headlight)**       | D1 (TX)     | Light mode control                        |
+| **Rear LED (Taillight)**        | D0 (RX)     | Light mode control                        |
+| **LCD 16×2 Display**            |             |                                            |
+| RS                              | A0          |                                            |
+| Enable (E)                      | A1          |                                            |
+| D4                              | A2          |                                            |
+| D5                              | A3          |                                            |
+| D6                              | A4          |                                            |
+| D7                              | A5          |                                            |
 
-| Device                    | Arduino Pin | Driver / Note            |
-|---------------------------|-------------|--------------------------|
-| **Ultrasonic Sensor**     |             |                          |
-| – Signal (Trig/Echo)      | D10         | Single‑pin 3‑pin sensor  |
-| – VCC                     | 5V          |                          |
-| – GND                     | GND         |                          |
-| **LCD 16×2**              |             |                          |
-| – RS                       | A0         |                          |
-| – E                        | A1         |                          |
-| – D4                       | A2         |                          |
-| – D5                       | A3         |                          |
-| – D6                       | A4         |                          |
-| – D7                       | A5         |                          |
-| – VCC                      | 5V         |                          |
-| – GND                      | GND        |                          |
-| **L293D Motor Driver 1**  |             | Controls motors 1 & 2    |
-| – Input1                  | D2          | Motor1 Pin1              |
-| – Input2                  | D3          | Motor1 Pin2              |
-| – Input3                  | D4          | Motor2 Pin1              |
-| – Input4                  | D5          | Motor2 Pin2              |
-| – VCC1                    | 5V          | Logic power              |
-| – VCC2                    | Battery     | Motor power              |
-| – GND                     | GND         |                          |
-| **L293D Motor Driver 2**  |             | Controls motors 3 & 4    |
-| – Input1                  | D6          | Motor3 Pin1              |
-| – Input2                  | D7          | Motor3 Pin2              |
-| – Input3                  | D8          | Motor4 Pin1              |
-| – Input4                  | D9          | Motor4 Pin2              |
-| – VCC1                    | 5V          | Logic power              |
-| – VCC2                    | Battery     | Motor power              |
-| – GND                     | GND         |                          |
+## Operation Modes
 
-## 3. Expected Performance
-- **Autonomous navigation** on flat surfaces, avoiding static obstacles.  
-- **Real‑time status updates** via LCD for rapid diagnostics.  
-- **Reaction time** within 100 ms (measurement & decision loop every 100 ms).
+### AUTO Mode
 
-## 4. Applications and Benefits
-- **Robotics education**: teaches ultrasonic sensing, motor drivers, and LCD interfacing.  
-- **Prototype platforms**: foundation for delivery bots, inspection robots, or cleaning robots.  
-- **Electronics labs**: rapid prototyping with Tinkercad and Arduino.
+- The robot moves forward until the **front ultrasonic sensor** detects an obstacle ≤ 20 cm.
+- On detection:
+  - It backs up (≤ 2 seconds).
+  - Then checks left and right by turning briefly.
+  - Chooses the first side that is clear; if both sides are blocked, alternates based on the last turn.
+- Keeps a memory of the last 5 navigation actions.
+- If no progress for 3 seconds, it executes an **escape sequence**, reversing previous moves.
+- LCD displays:
+  - State (`MOV`, `BCK`, `TR-R`, `TR-L`, `STP`).
+  - Memory index.
+  - Front distance in cm.
+- Indicators:
+  - `F!` (Front obstacle).
+  - `R!` (Rear obstacle).
 
-## 5. Learning Objectives
-- Understand the principles of ultrasonic distance sensing.  
-- Integrate multiple actuators (DC motors) and control buses.  
-- Build a simple user interface with an LCD.  
-- Practice C++ programming for microcontrollers.
+### MANUAL Mode
 
-## 6. Try It Online
-Experience and test the complete circuit and code in your browser using Tinkercad:  
-🔗 [UltrasonicBot on Tinkercad](https://www.tinkercad.com/things/2lPirGXAuKa-ultrasonicrobot?sharecode=cIJoI-HL6gTz--v_P5dtehzebWO45mbtDTdelOniyGU)
+- Fully controlled by the IR remote:
 
-## 7. Conclusion
-UltrasonicBot is a compact, effective platform for exploring the fundamentals of mobile robots with obstacle detection. Its simple build and concise code make it ideal for introductory robotics projects and educational workshops.
+| Button | Function             | IR Code      |
+| ------ | -------------------- | ------------ |
+| 2      | Forward              | 0xEE11BF00   |
+| 8      | Backward             | 0xE619BF00   |
+| 4      | Turn Left            | 0xEB14BF00   |
+| 6      | Turn Right           | 0xE916BF00   |
+| 5      | Emergency Stop       | 0xEA15BF00   |
+| 3      | Toggle Light Mode    |              |
+| 7      | Change LCD View      |              |
+| 9      | Increase Speed (+30) |              |
+| 0      | Decrease Speed (-30) |              |
+| ★ (*)  | Forward + Left       |              |
+| # (#)  | Forward + Right      |              |
+
+- LCD Views:
+  - **Standard View:** Current direction and speed percentage.
+  - **Sensor View:** Front and rear distance readings.
+  - **Diagnostics View:** Light mode status and current view index.
+
+## Light Modes
+
+- Modes toggle via the remote in manual mode:
+  - `ALL_OFF`
+  - `FRONT_ONLY`
+  - `REAR_ONLY`
+  - `ALL_ON`
+
+## State Machine & Logic
+
+- **States:**
+  - `MOVING`
+  - `BACKING`
+  - `TURNING_RIGHT`
+  - `TURNING_LEFT`
+  - `STOPPED`
+- **Escape Timer:** If no progress for 3000 ms, the robot automatically reverses the last actions to escape.
+- **Obstacle Avoidance:**
+  - Backs off if the rear sensor detects an obstacle while reversing.
+
+## Usage
+
+1. Upload the `prototypeBot.ino` sketch to your Arduino UNO.
+2. Connect motors, ultrasonic sensors, IR receiver, LEDs, and LCD according to the pin mapping above.
+3. Provide power:
+   - 5V for logic.
+   - Separate battery for motors (recommended).
+4. Use the IR remote to:
+   - Switch between AUTO and MANUAL modes.
+   - Control the robot manually.
+5. Monitor robot status and diagnostics on the LCD screen.
+
+## Tinkercad Simulation
+
+Try it online:  
+[https://www.tinkercad.com/things/5Ym8NNUPtSY-ultrasonicrobot](https://www.tinkercad.com/things/5Ym8NNUPtSY-ultrasonicrobot)
 
 ---
