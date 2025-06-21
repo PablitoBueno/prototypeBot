@@ -22,10 +22,6 @@ const int sigPinRear = 11;  // Sensor traseiro
 const int irReceiverPin = 12;
 IRrecv irrecv(irReceiverPin);
 
-// Faróis LED
-const int frontLightsPin = 1;  // LEDs frontais (D1)
-const int rearLightsPin = 0;   // LEDs traseiros (D0)
-
 // Parâmetros
 const long distanceThreshold = 20;    // Distância mínima para detecção (cm)
 const unsigned long avoidTurnTime = 600; // Tempo para virar 90° (ms)
@@ -36,13 +32,11 @@ const unsigned long ESCAPE_TIME = 3000; // Tempo máximo para escapar (ms)
 // Estados e modos
 enum RobotState { MOVING, BACKING, TURNING_RIGHT, TURNING_LEFT, STOPPED };
 enum OperationMode { AUTO, MANUAL };
-enum LightMode { ALL_OFF, FRONT_ONLY, REAR_ONLY, ALL_ON };
 enum NavAction { FORWARD, BACK, TURN_RIGHT, TURN_LEFT };
 
 // Variáveis globais
 RobotState currentState = MOVING;
 OperationMode currentMode = AUTO;
-LightMode currentLightMode = ALL_OFF;
 NavAction actionHistory[MAZE_MEMORY];
 int actionIndex = 0;
 unsigned long lastProgressTime = 0;
@@ -90,11 +84,6 @@ void setup() {
   // Configurar sensores ultrassônicos
   pinMode(sigPinFront, OUTPUT);
   pinMode(sigPinRear, OUTPUT);
-  
-  // Configurar faróis LED
-  pinMode(frontLightsPin, OUTPUT);
-  pinMode(rearLightsPin, OUTPUT);
-  updateLights();
   
   // Iniciar receptor IR
   irrecv.enableIRIn();
@@ -185,27 +174,6 @@ void stopMotors() {
   }
 }
 
-void updateLights() {
-  switch (currentLightMode) {
-    case ALL_OFF:
-      digitalWrite(frontLightsPin, LOW);
-      digitalWrite(rearLightsPin, LOW);
-      break;
-    case FRONT_ONLY:
-      digitalWrite(frontLightsPin, HIGH);
-      digitalWrite(rearLightsPin, LOW);
-      break;
-    case REAR_ONLY:
-      digitalWrite(frontLightsPin, LOW);
-      digitalWrite(rearLightsPin, HIGH);
-      break;
-    case ALL_ON:
-      digitalWrite(frontLightsPin, HIGH);
-      digitalWrite(rearLightsPin, HIGH);
-      break;
-  }
-}
-
 void updateLCD() {
   lcd.setCursor(0, 0);
   lcd.print("                ");
@@ -261,15 +229,9 @@ void updateLCD() {
         
       case 2: // Visão de diagnóstico
         lcd.setCursor(0, 1);
-        lcd.print("L:");
-        switch (currentLightMode) {
-          case ALL_OFF: lcd.print("OFF"); break;
-          case FRONT_ONLY: lcd.print("FRONT"); break;
-          case REAR_ONLY: lcd.print("REAR"); break;
-          case ALL_ON: lcd.print("ALL"); break;
-        }
-        lcd.print(" V:");
+        lcd.print("V:");
         lcd.print(displayView);
+        lcd.print("                ");
         break;
     }
   }
@@ -471,13 +433,6 @@ void manualMode() {
     stopMotors();
   }
   
-  // Luz de ré automática
-  if (manualBackward) {
-    digitalWrite(rearLightsPin, HIGH);
-  } else if (currentLightMode != REAR_ONLY && currentLightMode != ALL_ON) {
-    digitalWrite(rearLightsPin, LOW);
-  }
-  
   updateLCD();
 }
 
@@ -500,7 +455,6 @@ void processIR() {
       manualLeft = false;
       manualRight = false;
       stopMotors();
-      updateLights();
     }
     
     // Comandos específicos do modo manual
@@ -545,18 +499,6 @@ void processIR() {
           manualRight = false;
           stopMotors();
           Serial.println("MANUAL: Emergency stop!");
-          break;
-          
-        case IR_BUTTON_3: // Ciclar modos de faróis
-          currentLightMode = (LightMode)((currentLightMode + 1) % 4);
-          updateLights();
-          Serial.print("LIGHTS: Mode changed to ");
-          switch (currentLightMode) {
-            case ALL_OFF: Serial.println("ALL OFF"); break;
-            case FRONT_ONLY: Serial.println("FRONT ONLY"); break;
-            case REAR_ONLY: Serial.println("REAR ONLY"); break;
-            case ALL_ON: Serial.println("ALL ON"); break;
-          }
           break;
           
         case IR_BUTTON_7: // Alternar visualizações
