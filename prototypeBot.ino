@@ -1,40 +1,40 @@
 #include <LiquidCrystal.h>
 #include <IRremote.h>
 
-// Configuração do LCD
+// LCD Configuration
 LiquidCrystal lcd(A0, A1, A2, A3, A4, A5);
 
-// Pinos dos motores
-const int motor1Pin1 = 2;  // Roda esquerda dianteira
+// Motor pins
+const int motor1Pin1 = 2;  // Front left wheel
 const int motor1Pin2 = 3;
-const int motor2Pin1 = 4;  // Roda direita dianteira
+const int motor2Pin1 = 4;  // Front right wheel
 const int motor2Pin2 = 5;
-const int motor3Pin1 = 6;  // Roda esquerda traseira
+const int motor3Pin1 = 6;  // Rear left wheel
 const int motor3Pin2 = 7;
-const int motor4Pin1 = 8;  // Roda direita traseira
+const int motor4Pin1 = 8;  // Rear right wheel
 const int motor4Pin2 = 9;
 
-// Sensores ultrassônicos
-const int sigPinFront = 10; // Sensor frontal
-const int sigPinRear = 11;  // Sensor traseiro
+// Ultrasonic sensors
+const int sigPinFront = 10; // Front sensor
+const int sigPinRear = 11;  // Rear sensor
 
-// Receptor IR
+// IR receiver
 const int irReceiverPin = 12;
 IRrecv irrecv(irReceiverPin);
 
-// Parâmetros
-const long distanceThreshold = 20;    // Distância mínima para detecção (cm)
-const unsigned long avoidTurnTime = 600; // Tempo para virar 90° (ms)
-const unsigned long maxBackTime = 2000;  // Tempo máximo de recuo (ms)
-const int MAZE_MEMORY = 5;           // Memória de últimas decisões
-const unsigned long ESCAPE_TIME = 3000; // Tempo máximo para escapar (ms)
+// Parameters
+const long distanceThreshold = 20;    // Minimum detection distance (cm)
+const unsigned long avoidTurnTime = 600; // Time for 90° turn (ms)
+const unsigned long maxBackTime = 2000;  // Maximum backing time (ms)
+const int MAZE_MEMORY = 5;           // Memory for recent decisions
+const unsigned long ESCAPE_TIME = 3000; // Maximum escape time (ms)
 
-// Estados e modos
+// States and modes
 enum RobotState { MOVING, BACKING, TURNING_RIGHT, TURNING_LEFT, STOPPED };
 enum OperationMode { AUTO, MANUAL };
 enum NavAction { FORWARD, BACK, TURN_RIGHT, TURN_LEFT };
 
-// Variáveis globais
+// Global variables
 RobotState currentState = MOVING;
 OperationMode currentMode = AUTO;
 NavAction actionHistory[MAZE_MEMORY];
@@ -49,47 +49,45 @@ bool manualLeft = false;
 bool manualRight = false;
 unsigned long backStartTime = 0;
 unsigned long lastSensorCheck = 0;
-int currentSpeed = 150; // Velocidade PWM (0-255)
-int displayView = 0;    // Modo de visualização: 0=Padrão, 1=Sensores, 2=Diagnóstico
+int currentSpeed = 150; // PWM speed (0-255)
+int displayView = 0;    // Display mode: 0=Default, 1=Sensors, 2=Diagnostic
 
-// Códigos IR atualizados conforme especificado
+// Updated IR codes
 #define IR_BUTTON_1 0xEF10BF00
-#define IR_BUTTON_2 0xEE11BF00  // Frente
+#define IR_BUTTON_2 0xEE11BF00  // Forward
 #define IR_BUTTON_3 0xED12BF00
-#define IR_BUTTON_4 0xEB14BF00  // Esquerda
+#define IR_BUTTON_4 0xEB14BF00  // Left
 #define IR_BUTTON_5 0xEA15BF00  // OK/Stop
-#define IR_BUTTON_6 0xE916BF00  // Direita
+#define IR_BUTTON_6 0xE916BF00  // Right
 #define IR_BUTTON_7 0xE718BF00
-#define IR_BUTTON_8 0xE619BF00  // Ré
+#define IR_BUTTON_8 0xE619BF00  // Reverse
 #define IR_BUTTON_9 0xE51ABF00
 #define IR_BUTTON_0 0xF30CBF00
-#define IR_BUTTON_STAR 0xF708BF00  // Estrela (*)
-#define IR_BUTTON_HASH 0xE31CBF00  // Hashtag (#)
 
 void setup() {
   Serial.begin(9600);
   
-  // Inicializar LCD
+  // Initialize LCD
   lcd.begin(16, 2);
   lcd.clear();
   lcd.setCursor(2, 0);
   lcd.print("UltrasonicBot");
   updateLCD();
 
-  // Configurar pinos dos motores
+  // Configure motor pins
   for (int i = 2; i <= 9; i++) {
     pinMode(i, OUTPUT);
   }
 
-  // Configurar sensores ultrassônicos
+  // Configure ultrasonic sensors
   pinMode(sigPinFront, OUTPUT);
   pinMode(sigPinRear, OUTPUT);
   
-  // Iniciar receptor IR
+  // Start IR receiver
   irrecv.enableIRIn();
-  irrecv.blink13(true);  // LED pisca ao receber sinal
+  irrecv.blink13(true);  // Blink LED when receiving signal
   
-  // Inicializar memória de navegação
+  // Initialize navigation memory
   for (int i = 0; i < MAZE_MEMORY; i++) {
     actionHistory[i] = FORWARD;
   }
@@ -139,13 +137,13 @@ void moveBackward(int speed = 150) {
 void turnRight(int speed = 150) {
   speed = constrain(speed, 80, 255);
   
-  // Lado esquerdo: frente
+  // Left side: forward
   analogWrite(motor1Pin1, speed);
   digitalWrite(motor1Pin2, LOW);
   analogWrite(motor3Pin1, speed);
   digitalWrite(motor3Pin2, LOW);
   
-  // Lado direito: ré
+  // Right side: backward
   digitalWrite(motor2Pin1, LOW);
   analogWrite(motor2Pin2, speed);
   digitalWrite(motor4Pin1, LOW);
@@ -155,13 +153,13 @@ void turnRight(int speed = 150) {
 void turnLeft(int speed = 150) {
   speed = constrain(speed, 80, 255);
   
-  // Lado esquerdo: ré
+  // Left side: backward
   digitalWrite(motor1Pin1, LOW);
   analogWrite(motor1Pin2, speed);
   digitalWrite(motor3Pin1, LOW);
   analogWrite(motor3Pin2, speed);
   
-  // Lado direito: frente
+  // Right side: forward
   analogWrite(motor2Pin1, speed);
   digitalWrite(motor2Pin2, LOW);
   analogWrite(motor4Pin1, speed);
@@ -180,7 +178,7 @@ void updateLCD() {
   lcd.setCursor(0, 1);
   lcd.print("                ");
   
-  // Primeira linha: estado principal
+  // First line: main status
   lcd.setCursor(0, 0);
   lcd.print(currentMode == AUTO ? "A" : "M");
   lcd.print(" ");
@@ -193,7 +191,7 @@ void updateLCD() {
     case STOPPED: lcd.print("STP"); break;
   }
   
-  // Segunda linha: informações específicas do modo
+  // Second line: mode-specific information
   if (currentMode == AUTO) {
     lcd.setCursor(0, 1);
     lcd.print("M:");
@@ -206,7 +204,7 @@ void updateLCD() {
     lcd.print("cm");
   } else {
     switch (displayView) {
-      case 0: // Visão padrão
+      case 0: // Default view
         lcd.setCursor(0, 1);
         if (manualForward) lcd.print("FWD");
         if (manualBackward) lcd.print("REV");
@@ -219,7 +217,7 @@ void updateLCD() {
         lcd.print("%");
         break;
         
-      case 1: // Visão de sensores
+      case 1: // Sensor view
         lcd.setCursor(0, 1);
         lcd.print("F:");
         lcd.print(measureDistance(sigPinFront));
@@ -227,7 +225,7 @@ void updateLCD() {
         lcd.print(measureDistance(sigPinRear));
         break;
         
-      case 2: // Visão de diagnóstico
+      case 2: // Diagnostic view
         lcd.setCursor(0, 1);
         lcd.print("V:");
         lcd.print(displayView);
@@ -236,7 +234,7 @@ void updateLCD() {
     }
   }
   
-  // Indicadores de obstáculo
+  // Obstacle indicators
   if (frontObstacle) {
     lcd.setCursor(14, 0);
     lcd.print("F!");
@@ -277,11 +275,11 @@ bool checkSide(bool isLeft) {
 void autoMode() {
   checkSensors();
   
-  // Detectar se está preso
+  // Detect if stuck
   if (millis() - lastProgressTime > ESCAPE_TIME) {
     Serial.println("ESCAPE: No progress detected - executing escape");
     
-    // Voltar pelo caminho memorizado
+    // Follow memorized path backwards
     int steps = min(actionIndex, 2);
     for (int i = 0; i < steps; i++) {
       NavAction lastAction = actionHistory[(actionIndex - i - 1) % MAZE_MEMORY];
@@ -295,14 +293,14 @@ void autoMode() {
       }
     }
     
-    // Resetar memória
+    // Reset memory
     actionIndex = 0;
     lastProgressTime = millis();
     currentState = MOVING;
     return;
   }
 
-  // Máquina de estados principal
+  // Main state machine
   switch (currentState) {
     case MOVING:
       if (frontObstacle) {
@@ -316,7 +314,7 @@ void autoMode() {
       break;
       
     case BACKING:
-      // Segurança: parar se obstáculo traseiro detectado
+      // Safety: stop if rear obstacle detected
       if (rearObstacle) {
         Serial.println("AUTO: Rear obstacle detected! Stopping.");
         stopMotors();
@@ -329,7 +327,7 @@ void autoMode() {
       } else {
         stopMotors();
         
-        // Verificar lados alternadamente
+        // Check sides alternately
         bool tryRight = alternateTurn ? checkSide(false) : checkSide(true);
         bool tryLeft = alternateTurn ? checkSide(true) : checkSide(false);
         alternateTurn = !alternateTurn;
@@ -343,7 +341,7 @@ void autoMode() {
           actionHistory[actionIndex++ % MAZE_MEMORY] = TURN_LEFT;
           Serial.println("AUTO: Turning left (side clear)");
         } else {
-          // Ambos lados bloqueados, tentar direção oposta à última curva
+          // Both sides blocked, try opposite to last turn
           if (actionIndex > 0 && actionHistory[(actionIndex-1) % MAZE_MEMORY] == TURN_RIGHT) {
             currentState = TURNING_LEFT;
             actionHistory[actionIndex++ % MAZE_MEMORY] = TURN_LEFT;
@@ -390,7 +388,7 @@ void autoMode() {
       break;
       
     case STOPPED:
-      // Tentar encontrar saída
+      // Try to find exit
       checkSensors();
       if (!frontObstacle) {
         currentState = MOVING;
@@ -398,7 +396,7 @@ void autoMode() {
         currentState = BACKING;
         backStartTime = millis();
       } else {
-        // Girar aleatoriamente para tentar sair
+        // Random turn to escape
         randomSeed(analogRead(0));
         if (random(2) == 0) {
           turnLeft(150);
@@ -414,13 +412,13 @@ void autoMode() {
 }
 
 void manualMode() {
-  // Atualizar sensores
+  // Update sensors
   if (millis() - lastSensorCheck > 200) {
     checkSensors();
     lastSensorCheck = millis();
   }
 
-  // Executar movimentos
+  // Execute movements
   if (manualForward) {
     moveForward(currentSpeed);
   } else if (manualBackward) {
@@ -443,13 +441,13 @@ void processIR() {
     Serial.print("IR Received: 0x");
     Serial.println(irValue, HEX);
     
-    // Botão 1: Alternar entre AUTO/MANUAL
+    // Button 1: Toggle AUTO/MANUAL
     if (irValue == IR_BUTTON_1) {
       currentMode = (currentMode == AUTO) ? MANUAL : AUTO;
       Serial.print("MODE: Switched to ");
       Serial.println(currentMode == AUTO ? "AUTO" : "MANUAL");
       
-      // Resetar controles
+      // Reset controls
       manualForward = false;
       manualBackward = false;
       manualLeft = false;
@@ -457,10 +455,10 @@ void processIR() {
       stopMotors();
     }
     
-    // Comandos específicos do modo manual
+    // Manual mode specific commands
     if (currentMode == MANUAL) {
       switch (irValue) {
-        case IR_BUTTON_2: // Frente
+        case IR_BUTTON_2: // Forward
           manualForward = true;
           manualBackward = false;
           manualLeft = false;
@@ -468,7 +466,7 @@ void processIR() {
           Serial.println("MANUAL: Forward engaged");
           break;
           
-        case IR_BUTTON_8: // Ré
+        case IR_BUTTON_8: // Reverse
           manualForward = false;
           manualBackward = true;
           manualLeft = false;
@@ -476,7 +474,7 @@ void processIR() {
           Serial.println("MANUAL: Backward engaged");
           break;
           
-        case IR_BUTTON_4: // Esquerda
+        case IR_BUTTON_4: // Left
           manualForward = false;
           manualBackward = false;
           manualLeft = true;
@@ -484,7 +482,7 @@ void processIR() {
           Serial.println("MANUAL: Left turn engaged");
           break;
           
-        case IR_BUTTON_6: // Direita
+        case IR_BUTTON_6: // Right
           manualForward = false;
           manualBackward = false;
           manualLeft = false;
@@ -492,7 +490,7 @@ void processIR() {
           Serial.println("MANUAL: Right turn engaged");
           break;
           
-        case IR_BUTTON_5: // Parada de emergência
+        case IR_BUTTON_5: // Emergency stop
           manualForward = false;
           manualBackward = false;
           manualLeft = false;
@@ -501,36 +499,22 @@ void processIR() {
           Serial.println("MANUAL: Emergency stop!");
           break;
           
-        case IR_BUTTON_7: // Alternar visualizações
+        case IR_BUTTON_7: // Cycle display views
           displayView = (displayView + 1) % 3;
           Serial.print("DISPLAY: View changed to ");
           Serial.println(displayView);
           break;
           
-        case IR_BUTTON_9: // Aumentar velocidade
+        case IR_BUTTON_9: // Increase speed
           currentSpeed = min(255, currentSpeed + 30);
           Serial.print("SPEED: Increased to ");
           Serial.println(currentSpeed);
           break;
           
-        case IR_BUTTON_0: // Diminuir velocidade
+        case IR_BUTTON_0: // Decrease speed
           currentSpeed = max(80, currentSpeed - 30);
           Serial.print("SPEED: Decreased to ");
           Serial.println(currentSpeed);
-          break;
-          
-        case IR_BUTTON_STAR: // Combinação: Frente + Esquerda
-          manualForward = true;
-          manualLeft = true;
-          manualRight = false;
-          Serial.println("MANUAL: Forward + Left");
-          break;
-          
-        case IR_BUTTON_HASH: // Combinação: Frente + Direita
-          manualForward = true;
-          manualRight = true;
-          manualLeft = false;
-          Serial.println("MANUAL: Forward + Right");
           break;
       }
     }
@@ -549,6 +533,6 @@ void loop() {
     manualMode();
   }
   
-  // Pequeno delay para estabilidade
+  // Small delay for stability
   delay(50);
 }
