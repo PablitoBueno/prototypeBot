@@ -52,6 +52,10 @@ unsigned long lastSensorCheck = 0;
 int currentSpeed = 150; // PWM speed (0-255)
 int displayView = 0;    // Display mode: 0=Default, 1=Sensors, 2=Diagnostic
 
+// Sensor readings
+long frontDistance = 0;
+long rearDistance = 0;
+
 // Updated IR codes
 #define IR_BUTTON_1 0xEF10BF00
 #define IR_BUTTON_2 0xEE11BF00  // Forward
@@ -64,49 +68,50 @@ int displayView = 0;    // Display mode: 0=Default, 1=Sensors, 2=Diagnostic
 #define IR_BUTTON_9 0xE51ABF00
 #define IR_BUTTON_0 0xF30CBF00
 
-void setup() {
-  Serial.begin(9600);
-  
-  // Initialize LCD
-  lcd.begin(16, 2);
-  lcd.clear();
-  lcd.setCursor(2, 0);
-  lcd.print("UltrasonicBot");
-  updateLCD();
-
-  // Configure motor pins
-  for (int i = 2; i <= 9; i++) {
-    pinMode(i, OUTPUT);
-  }
-
-  // Configure ultrasonic sensors
-  pinMode(sigPinFront, OUTPUT);
-  pinMode(sigPinRear, OUTPUT);
-  
-  // Start IR receiver
-  irrecv.enableIRIn();
-  irrecv.blink13(true);  // Blink LED when receiving signal
-  
-  // Initialize navigation memory
-  for (int i = 0; i < MAZE_MEMORY; i++) {
-    actionHistory[i] = FORWARD;
-  }
-  
-  Serial.println("System initialized in AUTO mode");
-}
+// ============== SENSOR FUNCTIONS ============== //
 
 long measureDistance(int trigPin) {
+  // Reset sensor
   pinMode(trigPin, OUTPUT);
   digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
+  delayMicroseconds(3);
+  
+  // Send pulse
   digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
+  delayMicroseconds(10);  // Standard pulse width
   digitalWrite(trigPin, LOW);
 
+  // Measure response
   pinMode(trigPin, INPUT);
-  long duration = pulseIn(trigPin, HIGH, 30000);
-  return duration * 0.034 / 2;
+  long duration = pulseIn(trigPin, HIGH, 20000);  // 20ms timeout (max 3.4m)
+  
+  // Handle timeout
+  if (duration == 0) {
+    return 400; // Return max distance
+  }
+  
+  // Ajuste de precisão baseado na proporção observada (100cm reais = 70cm detectados)
+  // Fator de correção = 100/70 ≈ 1.4286
+  float distance_cm = duration * 0.0343 * 1.4286 / 2.0;
+  return (long)(distance_cm + 0.5); // Round to nearest integer
 }
+
+// Get stable distance reading with filtering
+const int SAMPLE_COUNT = 3;
+long getStableDistance(int pin) {
+  long sum = 0;
+  
+  // Take multiple readings
+  for(int i = 0; i < SAMPLE_COUNT; i++) {
+    sum += measureDistance(pin);
+    delay(10);  // Short delay between readings
+  }
+  
+  // Return average value
+  return sum / SAMPLE_COUNT;
+}
+
+// ============== MOTOR CONTROL ============== //
 
 void moveForward(int speed = 150) {
   speed = constrain(speed, 80, 255);
@@ -172,6 +177,8 @@ void stopMotors() {
   }
 }
 
+// ============== LCD & UI FUNCTIONS ============== //
+
 void updateLCD() {
   lcd.setCursor(0, 0);
   lcd.print("                ");
@@ -200,7 +207,7 @@ void updateLCD() {
     
     lcd.setCursor(6, 1);
     lcd.print("F:");
-    lcd.print(measureDistance(sigPinFront));
+    lcd.print(frontDistance);
     lcd.print("cm");
   } else {
     switch (displayView) {
@@ -220,16 +227,17 @@ void updateLCD() {
       case 1: // Sensor view
         lcd.setCursor(0, 1);
         lcd.print("F:");
-        lcd.print(measureDistance(sigPinFront));
+        lcd.print(frontDistance);
         lcd.print(" R:");
-        lcd.print(measureDistance(sigPinRear));
+        lcd.print(rearDistance);
         break;
         
       case 2: // Diagnostic view
         lcd.setCursor(0, 1);
         lcd.print("V:");
         lcd.print(displayView);
-        lcd.print("                ");
+        lcd.print(" SPD:");
+        lcd.print(currentSpeed);
         break;
     }
   }
@@ -245,10 +253,27 @@ void updateLCD() {
   }
 }
 
+// ============== SENSOR MANAGEMENT ============== //
+
 void checkSensors() {
-  frontObstacle = (measureDistance(sigPinFront) <= distanceThreshold);
-  rearObstacle = (measureDistance(sigPinRear) <= distanceThreshold);
+  static unsigned long lastFrontCheck = 0;
+  static unsigned long lastRearCheck = 0;
+  
+  // Stagger sensor checks to prevent interference
+  if (millis() - lastFrontCheck > 150) {
+    frontDistance = getStableDistance(sigPinFront);
+    frontObstacle = (frontDistance <= distanceThreshold);
+    lastFrontCheck = millis();
+  }
+  
+  if (millis() - lastRearCheck > 150) {
+    rearDistance = getStableDistance(sigPinRear);
+    rearObstacle = (rearDistance <= distanceThreshold);
+    lastRearCheck = millis();
+  }
 }
+
+// ============== NAVIGATION FUNCTIONS ============== //
 
 bool checkSide(bool isLeft) {
   if (isLeft) {
@@ -259,7 +284,7 @@ bool checkSide(bool isLeft) {
     delay(300);
   }
   
-  bool obstacle = measureDistance(sigPinFront) <= distanceThreshold;
+  bool obstacle = frontDistance <= distanceThreshold;
   
   if (isLeft) {
     turnRight(150);
@@ -271,6 +296,8 @@ bool checkSide(bool isLeft) {
   
   return obstacle;
 }
+
+// ============== OPERATION MODES ============== //
 
 void autoMode() {
   checkSensors();
@@ -409,6 +436,8 @@ void autoMode() {
       }
       break;
   }
+  
+  updateLCD();
 }
 
 void manualMode() {
@@ -433,6 +462,8 @@ void manualMode() {
   
   updateLCD();
 }
+
+// ============== IR CONTROL ============== //
 
 void processIR() {
   if (irrecv.decode()) {
@@ -523,16 +554,48 @@ void processIR() {
   }
 }
 
+// ============== MAIN PROGRAM ============== //
+
+void setup() {
+  Serial.begin(9600);
+  
+  // Initialize LCD
+  lcd.begin(16, 2);
+  lcd.clear();
+  lcd.setCursor(2, 0);
+  lcd.print("UltrasonicBot");
+  updateLCD();
+
+  // Configure motor pins
+  for (int i = 2; i <= 9; i++) {
+    pinMode(i, OUTPUT);
+  }
+
+  // Configure ultrasonic sensors
+  pinMode(sigPinFront, OUTPUT);
+  pinMode(sigPinRear, OUTPUT);
+  
+  // Start IR receiver
+  irrecv.enableIRIn();
+  irrecv.blink13(true);  // Blink LED when receiving signal
+  
+  // Initialize navigation memory
+  for (int i = 0; i < MAZE_MEMORY; i++) {
+    actionHistory[i] = FORWARD;
+  }
+  
+  Serial.println("System initialized in AUTO mode");
+}
+
 void loop() {
   processIR();
   
   if (currentMode == AUTO) {
     autoMode();
-    updateLCD();
   } else {
     manualMode();
   }
   
   // Small delay for stability
-  delay(50);
+  delay(25);
 }
