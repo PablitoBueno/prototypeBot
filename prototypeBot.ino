@@ -56,6 +56,9 @@ int displayView = 0;    // Display mode: 0=Default, 1=Sensors, 2=Diagnostic
 long frontDistance = 0;
 long rearDistance = 0;
 
+// Tinkercad motor compensation
+const float TINKERCAD_CORRECTION = 1.10; // 10% compensation factor
+
 // Updated IR codes
 #define IR_BUTTON_1 0xEF10BF00
 #define IR_BUTTON_2 0xEE11BF00  // Forward
@@ -67,6 +70,13 @@ long rearDistance = 0;
 #define IR_BUTTON_8 0xE619BF00  // Reverse
 #define IR_BUTTON_9 0xE51ABF00
 #define IR_BUTTON_0 0xF30CBF00
+
+// ============== MOTOR CORRECTION ============== //
+int applyMotorCorrection(int speed) {
+  // Apply correction to all speed levels
+  int corrected = static_cast<int>(speed * TINKERCAD_CORRECTION);
+  return min(255, corrected); // Ensure we don't exceed maximum PWM
+}
 
 // ============== SENSOR FUNCTIONS ============== //
 
@@ -114,6 +124,8 @@ long getStableDistance(int pin) {
 // ============== MOTOR CONTROL ============== //
 
 void moveForward(int speed = 150) {
+  // Apply Tinkercad compensation
+  speed = applyMotorCorrection(speed);
   speed = constrain(speed, 80, 255);
   
   analogWrite(motor1Pin1, speed);
@@ -127,6 +139,8 @@ void moveForward(int speed = 150) {
 }
 
 void moveBackward(int speed = 150) {
+  // Apply Tinkercad compensation
+  speed = applyMotorCorrection(speed);
   speed = constrain(speed, 80, 255);
   
   digitalWrite(motor1Pin1, LOW);
@@ -140,6 +154,8 @@ void moveBackward(int speed = 150) {
 }
 
 void turnRight(int speed = 150) {
+  // Apply Tinkercad compensation
+  speed = applyMotorCorrection(speed);
   speed = constrain(speed, 80, 255);
   
   // Left side: forward
@@ -156,6 +172,8 @@ void turnRight(int speed = 150) {
 }
 
 void turnLeft(int speed = 150) {
+  // Apply Tinkercad compensation
+  speed = applyMotorCorrection(speed);
   speed = constrain(speed, 80, 255);
   
   // Left side: backward
@@ -569,6 +587,7 @@ void setup() {
   // Configure motor pins
   for (int i = 2; i <= 9; i++) {
     pinMode(i, OUTPUT);
+    digitalWrite(i, LOW);
   }
 
   // Configure ultrasonic sensors
