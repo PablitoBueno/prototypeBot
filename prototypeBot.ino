@@ -50,7 +50,6 @@ bool manualRight = false;
 unsigned long backStartTime = 0;
 unsigned long lastSensorCheck = 0;
 int currentSpeed = 150; // PWM speed (0-255)
-int displayView = 0;    // Display mode: 0=Default, 1=Sensors, 2=Diagnostic
 
 // Sensor readings
 long frontDistance = 0;
@@ -66,10 +65,9 @@ const float TINKERCAD_CORRECTION = 1.10; // 10% compensation factor
 #define IR_BUTTON_4 0xEB14BF00  // Left
 #define IR_BUTTON_5 0xEA15BF00  // OK/Stop
 #define IR_BUTTON_6 0xE916BF00  // Right
-#define IR_BUTTON_7 0xE718BF00
+#define IR_BUTTON_7 0xE718BF00  // Now for decreasing speed
 #define IR_BUTTON_8 0xE619BF00  // Reverse
-#define IR_BUTTON_9 0xE51ABF00
-#define IR_BUTTON_0 0xF30CBF00
+#define IR_BUTTON_9 0xE51ABF00  // Increase speed
 
 // ============== MOTOR CORRECTION ============== //
 int applyMotorCorrection(int speed) {
@@ -228,36 +226,12 @@ void updateLCD() {
     lcd.print(frontDistance);
     lcd.print("cm");
   } else {
-    switch (displayView) {
-      case 0: // Default view
-        lcd.setCursor(0, 1);
-        if (manualForward) lcd.print("FWD");
-        if (manualBackward) lcd.print("REV");
-        if (manualLeft) lcd.print(" LEFT");
-        if (manualRight) lcd.print(" RIGHT");
-        
-        lcd.setCursor(10, 1);
-        lcd.print("SPD:");
-        lcd.print(map(currentSpeed, 0, 255, 0, 100));
-        lcd.print("%");
-        break;
-        
-      case 1: // Sensor view
-        lcd.setCursor(0, 1);
-        lcd.print("F:");
-        lcd.print(frontDistance);
-        lcd.print(" R:");
-        lcd.print(rearDistance);
-        break;
-        
-      case 2: // Diagnostic view
-        lcd.setCursor(0, 1);
-        lcd.print("V:");
-        lcd.print(displayView);
-        lcd.print(" SPD:");
-        lcd.print(currentSpeed);
-        break;
-    }
+    // Only show sensor view (previously mode 1)
+    lcd.setCursor(0, 1);
+    lcd.print("F:");
+    lcd.print(frontDistance);
+    lcd.print(" R:");
+    lcd.print(rearDistance);
   }
   
   // Obstacle indicators
@@ -548,19 +522,13 @@ void processIR() {
           Serial.println("MANUAL: Emergency stop!");
           break;
           
-        case IR_BUTTON_7: // Cycle display views
-          displayView = (displayView + 1) % 3;
-          Serial.print("DISPLAY: View changed to ");
-          Serial.println(displayView);
-          break;
-          
         case IR_BUTTON_9: // Increase speed
           currentSpeed = min(255, currentSpeed + 30);
           Serial.print("SPEED: Increased to ");
           Serial.println(currentSpeed);
           break;
           
-        case IR_BUTTON_0: // Decrease speed
+        case IR_BUTTON_7: // Decrease speed (previously button 0's function)
           currentSpeed = max(80, currentSpeed - 30);
           Serial.print("SPEED: Decreased to ");
           Serial.println(currentSpeed);
@@ -596,7 +564,7 @@ void setup() {
   
   // Start IR receiver
   irrecv.enableIRIn();
-  irrecv.blink13(true);  // Blink LED when receiving signal
+  irrecv.blink13(false);  // Disable LED blinking when receiving signal
   
   // Initialize navigation memory
   for (int i = 0; i < MAZE_MEMORY; i++) {
