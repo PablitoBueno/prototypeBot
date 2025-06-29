@@ -55,13 +55,9 @@ int currentSpeed = 150; // PWM speed (0-255)
 long frontDistance = 0;
 long rearDistance = 0;
 
-// Tinkercad motor compensation
-const float TINKERCAD_CORRECTION = 1.10; // 10% compensation factor
-
 // Updated IR codes
-#define IR_BUTTON_1 0xEF10BF00
+#define IR_BUTTON_1 0xEF10BF00  // switch auto/manual
 #define IR_BUTTON_2 0xEE11BF00  // Forward
-#define IR_BUTTON_3 0xED12BF00
 #define IR_BUTTON_4 0xEB14BF00  // Left
 #define IR_BUTTON_5 0xEA15BF00  // OK/Stop
 #define IR_BUTTON_6 0xE916BF00  // Right
@@ -72,7 +68,7 @@ const float TINKERCAD_CORRECTION = 1.10; // 10% compensation factor
 // ============== MOTOR CORRECTION ============== //
 int applyMotorCorrection(int speed) {
   // Apply correction to all speed levels
-  int corrected = static_cast<int>(speed * TINKERCAD_CORRECTION);
+  int corrected = static_cast<int>(speed * 1.125);
   return min(255, corrected); // Ensure we don't exceed maximum PWM
 }
 
@@ -97,10 +93,7 @@ long measureDistance(int trigPin) {
   if (duration == 0) {
     return 400; // Return max distance
   }
-  
-  // Ajuste de precisão baseado na proporção observada (100cm reais = 70cm detectados)
-  // Fator de correção = 100/70 ≈ 1.4286
-  float distance_cm = duration * 0.0343 * 1.4286 / 2.0;
+  float distance_cm = duration * 0.0343 * 1.255 / 2.0;
   return (long)(distance_cm + 0.5); // Round to nearest integer
 }
 
@@ -201,17 +194,19 @@ void updateLCD() {
   lcd.setCursor(0, 1);
   lcd.print("                ");
   
-  // First line: main status
+  // First line: display mode and state
   lcd.setCursor(0, 0);
-  lcd.print(currentMode == AUTO ? "A" : "M");
-  lcd.print(" ");
-  
-  switch (currentState) {
-    case MOVING: lcd.print("MOV"); break;
-    case BACKING: lcd.print("BCK"); break;
-    case TURNING_RIGHT: lcd.print("TR-R"); break;
-    case TURNING_LEFT: lcd.print("TR-L"); break;
-    case STOPPED: lcd.print("STP"); break;
+  if (currentMode == AUTO) {
+    lcd.print("AUTO ");
+    switch (currentState) {
+      case MOVING: lcd.print("MOV"); break;
+      case BACKING: lcd.print("BCK"); break;
+      case TURNING_RIGHT: lcd.print("TR-R"); break;
+      case TURNING_LEFT: lcd.print("TR-L"); break;
+      case STOPPED: lcd.print("STP"); break;
+    }
+  } else {
+    lcd.print("MANUAL");
   }
   
   // Second line: mode-specific information
@@ -226,7 +221,7 @@ void updateLCD() {
     lcd.print(frontDistance);
     lcd.print("cm");
   } else {
-    // Only show sensor view (previously mode 1)
+    // Only show sensor view
     lcd.setCursor(0, 1);
     lcd.print("F:");
     lcd.print(frontDistance);
@@ -296,8 +291,6 @@ void autoMode() {
   
   // Detect if stuck
   if (millis() - lastProgressTime > ESCAPE_TIME) {
-    Serial.println("ESCAPE: No progress detected - executing escape");
-    
     // Follow memorized path backwards
     int steps = min(actionIndex, 2);
     for (int i = 0; i < steps; i++) {
@@ -325,7 +318,6 @@ void autoMode() {
       if (frontObstacle) {
         currentState = BACKING;
         backStartTime = millis();
-        Serial.println("AUTO: Front obstacle -> Backing");
       } else {
         moveForward(150);
         lastProgressTime = millis();
@@ -335,7 +327,6 @@ void autoMode() {
     case BACKING:
       // Safety: stop if rear obstacle detected
       if (rearObstacle) {
-        Serial.println("AUTO: Rear obstacle detected! Stopping.");
         stopMotors();
         currentState = STOPPED;
         break;
@@ -354,21 +345,17 @@ void autoMode() {
         if (!tryRight) {
           currentState = TURNING_RIGHT;
           actionHistory[actionIndex++ % MAZE_MEMORY] = TURN_RIGHT;
-          Serial.println("AUTO: Turning right (side clear)");
         } else if (!tryLeft) {
           currentState = TURNING_LEFT;
           actionHistory[actionIndex++ % MAZE_MEMORY] = TURN_LEFT;
-          Serial.println("AUTO: Turning left (side clear)");
         } else {
           // Both sides blocked, try opposite to last turn
           if (actionIndex > 0 && actionHistory[(actionIndex-1) % MAZE_MEMORY] == TURN_RIGHT) {
             currentState = TURNING_LEFT;
             actionHistory[actionIndex++ % MAZE_MEMORY] = TURN_LEFT;
-            Serial.println("AUTO: Turning left (opposite to last)");
           } else {
             currentState = TURNING_RIGHT;
             actionHistory[actionIndex++ % MAZE_MEMORY] = TURN_RIGHT;
-            Serial.println("AUTO: Turning right (default)");
           }
         }
       }
@@ -381,7 +368,6 @@ void autoMode() {
       
       checkSensors();
       if (frontObstacle) {
-        Serial.println("AUTO: Path still blocked after turn");
         currentState = BACKING;
         backStartTime = millis();
       } else {
@@ -397,7 +383,6 @@ void autoMode() {
       
       checkSensors();
       if (frontObstacle) {
-        Serial.println("AUTO: Path still blocked after turn");
         currentState = BACKING;
         backStartTime = millis();
       } else {
@@ -461,15 +446,9 @@ void processIR() {
   if (irrecv.decode()) {
     unsigned long irValue = irrecv.decodedIRData.decodedRawData;
     
-    Serial.print("IR Received: 0x");
-    Serial.println(irValue, HEX);
-    
     // Button 1: Toggle AUTO/MANUAL
     if (irValue == IR_BUTTON_1) {
       currentMode = (currentMode == AUTO) ? MANUAL : AUTO;
-      Serial.print("MODE: Switched to ");
-      Serial.println(currentMode == AUTO ? "AUTO" : "MANUAL");
-      
       // Reset controls
       manualForward = false;
       manualBackward = false;
@@ -486,7 +465,6 @@ void processIR() {
           manualBackward = false;
           manualLeft = false;
           manualRight = false;
-          Serial.println("MANUAL: Forward engaged");
           break;
           
         case IR_BUTTON_8: // Reverse
@@ -494,7 +472,6 @@ void processIR() {
           manualBackward = true;
           manualLeft = false;
           manualRight = false;
-          Serial.println("MANUAL: Backward engaged");
           break;
           
         case IR_BUTTON_4: // Left
@@ -502,7 +479,6 @@ void processIR() {
           manualBackward = false;
           manualLeft = true;
           manualRight = false;
-          Serial.println("MANUAL: Left turn engaged");
           break;
           
         case IR_BUTTON_6: // Right
@@ -510,7 +486,6 @@ void processIR() {
           manualBackward = false;
           manualLeft = false;
           manualRight = true;
-          Serial.println("MANUAL: Right turn engaged");
           break;
           
         case IR_BUTTON_5: // Emergency stop
@@ -519,19 +494,14 @@ void processIR() {
           manualLeft = false;
           manualRight = false;
           stopMotors();
-          Serial.println("MANUAL: Emergency stop!");
           break;
           
         case IR_BUTTON_9: // Increase speed
           currentSpeed = min(255, currentSpeed + 30);
-          Serial.print("SPEED: Increased to ");
-          Serial.println(currentSpeed);
           break;
           
-        case IR_BUTTON_7: // Decrease speed (previously button 0's function)
+        case IR_BUTTON_7: // Decrease speed
           currentSpeed = max(80, currentSpeed - 30);
-          Serial.print("SPEED: Decreased to ");
-          Serial.println(currentSpeed);
           break;
       }
     }
@@ -543,8 +513,6 @@ void processIR() {
 // ============== MAIN PROGRAM ============== //
 
 void setup() {
-  Serial.begin(9600);
-  
   // Initialize LCD
   lcd.begin(16, 2);
   lcd.clear();
@@ -570,8 +538,6 @@ void setup() {
   for (int i = 0; i < MAZE_MEMORY; i++) {
     actionHistory[i] = FORWARD;
   }
-  
-  Serial.println("System initialized in AUTO mode");
 }
 
 void loop() {
