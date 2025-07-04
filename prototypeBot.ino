@@ -4,15 +4,15 @@
 // LCD Configuration
 LiquidCrystal lcd(A0, A1, A2, A3, A4, A5);
 
-// Motor pins
-const int motor1Pin1 = 2;  // Front left wheel
-const int motor1Pin2 = 3;
-const int motor2Pin1 = 4;  // Front right wheel
-const int motor2Pin2 = 5;
-const int motor3Pin1 = 6;  // Rear left wheel
-const int motor3Pin2 = 7;
-const int motor4Pin1 = 8;  // Rear right wheel
-const int motor4Pin2 = 9;
+// Motor pins (conexões atualizadas para controle digital)
+const int motor1Pin1 = 2;  // Front left wheel - IN1
+const int motor1Pin2 = 3;  // IN2
+const int motor2Pin1 = 4;  // Front right wheel - IN3
+const int motor2Pin2 = 5;  // IN4
+const int motor3Pin1 = 6;  // Rear left wheel - IN1
+const int motor3Pin2 = 7;  // IN2
+const int motor4Pin1 = 8;  // Rear right wheel - IN3
+const int motor4Pin2 = 9;  // IN4
 
 // Ultrasonic sensors
 const int sigPinFront = 10; // Front sensor
@@ -49,7 +49,7 @@ bool manualLeft = false;
 bool manualRight = false;
 unsigned long backStartTime = 0;
 unsigned long lastSensorCheck = 0;
-int currentSpeed = 150; // PWM speed (0-255)
+int currentSpeed = 150; // Não utilizado no controle digital
 
 // Sensor readings
 long frontDistance = 0;
@@ -64,13 +64,6 @@ long rearDistance = 0;
 #define IR_BUTTON_7 0xE718BF00  // Now for decreasing speed
 #define IR_BUTTON_8 0xE619BF00  // Reverse
 #define IR_BUTTON_9 0xE51ABF00  // Increase speed
-
-// ============== MOTOR CORRECTION ============== //
-int applyMotorCorrection(int speed) {
-  // Apply correction to all speed levels
-  int corrected = static_cast<int>(speed * 1.125);
-  return min(255, corrected); // Ensure we don't exceed maximum PWM
-}
 
 // ============== SENSOR FUNCTIONS ============== //
 
@@ -114,70 +107,68 @@ long getStableDistance(int pin) {
 
 // ============== MOTOR CONTROL ============== //
 
-void moveForward(int speed = 150) {
-  // Apply Tinkercad compensation
-  speed = applyMotorCorrection(speed);
-  speed = constrain(speed, 80, 255);
-  
-  analogWrite(motor1Pin1, speed);
+void moveForward() {
+  // Front left wheel: forward
+  digitalWrite(motor1Pin1, HIGH);
   digitalWrite(motor1Pin2, LOW);
+  
+  // Front right wheel: forward (sentido inverso)
   digitalWrite(motor2Pin1, LOW);
-  analogWrite(motor2Pin2, speed);
-  analogWrite(motor3Pin1, speed);
+  digitalWrite(motor2Pin2, HIGH);
+  
+  // Rear left wheel: forward
+  digitalWrite(motor3Pin1, HIGH);
   digitalWrite(motor3Pin2, LOW);
+  
+  // Rear right wheel: forward (sentido inverso)
   digitalWrite(motor4Pin1, LOW);
-  analogWrite(motor4Pin2, speed);
+  digitalWrite(motor4Pin2, HIGH);
 }
 
-void moveBackward(int speed = 150) {
-  // Apply Tinkercad compensation
-  speed = applyMotorCorrection(speed);
-  speed = constrain(speed, 80, 255);
-  
+void moveBackward() {
+  // Front left wheel: backward
   digitalWrite(motor1Pin1, LOW);
-  analogWrite(motor1Pin2, speed);
-  analogWrite(motor2Pin1, speed);
+  digitalWrite(motor1Pin2, HIGH);
+  
+  // Front right wheel: backward (sentido inverso)
+  digitalWrite(motor2Pin1, HIGH);
   digitalWrite(motor2Pin2, LOW);
+  
+  // Rear left wheel: backward
   digitalWrite(motor3Pin1, LOW);
-  analogWrite(motor3Pin2, speed);
-  analogWrite(motor4Pin1, speed);
+  digitalWrite(motor3Pin2, HIGH);
+  
+  // Rear right wheel: backward (sentido inverso)
+  digitalWrite(motor4Pin1, HIGH);
   digitalWrite(motor4Pin2, LOW);
 }
 
-void turnRight(int speed = 150) {
-  // Apply Tinkercad compensation
-  speed = applyMotorCorrection(speed);
-  speed = constrain(speed, 80, 255);
-  
+void turnRight() {
   // Left side: forward
-  analogWrite(motor1Pin1, speed);
+  digitalWrite(motor1Pin1, HIGH);
   digitalWrite(motor1Pin2, LOW);
-  analogWrite(motor3Pin1, speed);
+  digitalWrite(motor3Pin1, HIGH);
   digitalWrite(motor3Pin2, LOW);
   
   // Right side: backward
-  digitalWrite(motor2Pin1, LOW);
-  analogWrite(motor2Pin2, speed);
-  digitalWrite(motor4Pin1, LOW);
-  analogWrite(motor4Pin2, speed);
+  digitalWrite(motor2Pin1, HIGH);
+  digitalWrite(motor2Pin2, LOW);
+  digitalWrite(motor4Pin1, HIGH);
+  digitalWrite(motor4Pin2, LOW);
 }
 
-void turnLeft(int speed = 150) {
-  // Apply Tinkercad compensation
-  speed = applyMotorCorrection(speed);
-  speed = constrain(speed, 80, 255);
-  
+void turnLeft() {
   // Left side: backward
   digitalWrite(motor1Pin1, LOW);
-  analogWrite(motor1Pin2, speed);
+  digitalWrite(motor1Pin2, HIGH);
   digitalWrite(motor3Pin1, LOW);
-  analogWrite(motor3Pin2, speed);
+  digitalWrite(motor3Pin2, HIGH);
   
   // Right side: forward
-  analogWrite(motor2Pin1, speed);
-  digitalWrite(motor2Pin2, LOW);
-  analogWrite(motor4Pin1, speed);
-  digitalWrite(motor4Pin2, LOW);
+  digitalWrite(motor2Pin1, LOW);
+  digitalWrite(motor2Pin2, HIGH);
+  digitalWrite(motor4Pin1, LOW);
+  digitalWrite(motor4Pin2, HIGH);
 }
 
 void stopMotors() {
@@ -264,19 +255,19 @@ void checkSensors() {
 
 bool checkSide(bool isLeft) {
   if (isLeft) {
-    turnLeft(150);
+    turnLeft();
     delay(300);
   } else {
-    turnRight(150);
+    turnRight();
     delay(300);
   }
   
   bool obstacle = frontDistance <= distanceThreshold;
   
   if (isLeft) {
-    turnRight(150);
+    turnRight();
   } else {
-    turnLeft(150);
+    turnLeft();
   }
   delay(300);
   stopMotors();
@@ -297,10 +288,10 @@ void autoMode() {
       NavAction lastAction = actionHistory[(actionIndex - i - 1) % MAZE_MEMORY];
       
       if (lastAction == TURN_RIGHT) {
-        turnLeft(150);
+        turnLeft();
         delay(avoidTurnTime);
       } else if (lastAction == TURN_LEFT) {
-        turnRight(150);
+        turnRight();
         delay(avoidTurnTime);
       }
     }
@@ -319,7 +310,7 @@ void autoMode() {
         currentState = BACKING;
         backStartTime = millis();
       } else {
-        moveForward(150);
+        moveForward();
         lastProgressTime = millis();
       }
       break;
@@ -333,7 +324,7 @@ void autoMode() {
       }
       
       if (frontObstacle && (millis() - backStartTime < maxBackTime)) {
-        moveBackward(150);
+        moveBackward();
       } else {
         stopMotors();
         
@@ -362,7 +353,7 @@ void autoMode() {
       break;
       
     case TURNING_RIGHT:
-      turnRight(150);
+      turnRight();
       delay(avoidTurnTime);
       stopMotors();
       
@@ -377,7 +368,7 @@ void autoMode() {
       break;
       
     case TURNING_LEFT:
-      turnLeft(150);
+      turnLeft();
       delay(avoidTurnTime);
       stopMotors();
       
@@ -403,10 +394,10 @@ void autoMode() {
         // Random turn to escape
         randomSeed(analogRead(0));
         if (random(2) == 0) {
-          turnLeft(150);
+          turnLeft();
           delay(avoidTurnTime);
         } else {
-          turnRight(150);
+          turnRight();
           delay(avoidTurnTime);
         }
         currentState = MOVING;
@@ -426,13 +417,13 @@ void manualMode() {
 
   // Execute movements
   if (manualForward) {
-    moveForward(currentSpeed);
+    moveForward();
   } else if (manualBackward) {
-    moveBackward(currentSpeed);
+    moveBackward();
   } else if (manualLeft) {
-    turnLeft(currentSpeed);
+    turnLeft();
   } else if (manualRight) {
-    turnRight(currentSpeed);
+    turnRight();
   } else {
     stopMotors();
   }
@@ -496,12 +487,10 @@ void processIR() {
           stopMotors();
           break;
           
-        case IR_BUTTON_9: // Increase speed
-          currentSpeed = min(255, currentSpeed + 30);
+        case IR_BUTTON_9: // Increase speed (não aplicável)
           break;
           
-        case IR_BUTTON_7: // Decrease speed
-          currentSpeed = max(80, currentSpeed - 30);
+        case IR_BUTTON_7: // Decrease speed (não aplicável)
           break;
       }
     }
