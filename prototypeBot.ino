@@ -49,7 +49,6 @@ bool manualLeft = false;
 bool manualRight = false;
 unsigned long backStartTime = 0;
 unsigned long lastSensorCheck = 0;
-int currentSpeed = 150; // Não utilizado no controle digital
 
 // Sensor readings
 long frontDistance = 0;
@@ -61,9 +60,7 @@ long rearDistance = 0;
 #define IR_BUTTON_4 0xEB14BF00  // Left
 #define IR_BUTTON_5 0xEA15BF00  // OK/Stop
 #define IR_BUTTON_6 0xE916BF00  // Right
-#define IR_BUTTON_7 0xE718BF00  // Now for decreasing speed
 #define IR_BUTTON_8 0xE619BF00  // Reverse
-#define IR_BUTTON_9 0xE51ABF00  // Increase speed
 
 // ============== SENSOR FUNCTIONS ============== //
 
@@ -188,37 +185,25 @@ void updateLCD() {
   // First line: display mode and state
   lcd.setCursor(0, 0);
   if (currentMode == AUTO) {
-    lcd.print("AUTO ");
+    lcd.print("Auto ");
     switch (currentState) {
-      case MOVING: lcd.print("MOV"); break;
-      case BACKING: lcd.print("BCK"); break;
-      case TURNING_RIGHT: lcd.print("TR-R"); break;
-      case TURNING_LEFT: lcd.print("TR-L"); break;
-      case STOPPED: lcd.print("STP"); break;
+      case MOVING: lcd.print("Mov"); break;
+      case BACKING: lcd.print("Bck"); break;
+      case TURNING_RIGHT: lcd.print("TrR"); break;
+      case TURNING_LEFT: lcd.print("TrL"); break;
+      case STOPPED: lcd.print("Stp"); break;
     }
   } else {
-    lcd.print("MANUAL");
+    lcd.print("Manual");
   }
   
-  // Second line: mode-specific information
-  if (currentMode == AUTO) {
-    lcd.setCursor(0, 1);
-    lcd.print("M:");
-    lcd.print(actionIndex);
-    lcd.print(" ");
-    
-    lcd.setCursor(6, 1);
-    lcd.print("F:");
-    lcd.print(frontDistance);
-    lcd.print("cm");
-  } else {
-    // Only show sensor view
-    lcd.setCursor(0, 1);
-    lcd.print("F:");
-    lcd.print(frontDistance);
-    lcd.print(" R:");
-    lcd.print(rearDistance);
-  }
+  // Second line: sensor information
+  lcd.setCursor(0, 1);
+  lcd.print("F:");
+  lcd.print(frontDistance);
+  lcd.print("cm R:");
+  lcd.print(rearDistance);
+  lcd.print("cm");
   
   // Obstacle indicators
   if (frontObstacle) {
@@ -485,12 +470,6 @@ void processIR() {
           manualLeft = false;
           manualRight = false;
           stopMotors();
-          break;
-          
-        case IR_BUTTON_9: // Increase speed (não aplicável)
-          break;
-          
-        case IR_BUTTON_7: // Decrease speed (não aplicável)
           break;
       }
     }
