@@ -1,191 +1,200 @@
 #include <LiquidCrystal.h>
 #include <IRremote.h>
 
-// LCD Configuration
+// LCD CONFIGURATION
+// Initialize LCD using analog pins A0-A5 as digital control pins
 LiquidCrystal lcd(A0, A1, A2, A3, A4, A5);
 
-// Motor pins (conexões atualizadas para controle digital)
+// MOTOR CONTROL PINS
+// Motor driver pin assignments (note right-side motors use inverse logic)
 const int motor1Pin1 = 2;  // Front left wheel - IN1
 const int motor1Pin2 = 3;  // IN2
-const int motor2Pin1 = 4;  // Front right wheel - IN3
+const int motor2Pin1 = 4;  // Front right wheel - IN3 (inverse direction)
 const int motor2Pin2 = 5;  // IN4
 const int motor3Pin1 = 6;  // Rear left wheel - IN1
 const int motor3Pin2 = 7;  // IN2
-const int motor4Pin1 = 8;  // Rear right wheel - IN3
+const int motor4Pin1 = 8;  // Rear right wheel - IN3 (inverse direction)
 const int motor4Pin2 = 9;  // IN4
 
-// Ultrasonic sensors
-const int sigPinFront = 10; // Front sensor
-const int sigPinRear = 11;  // Rear sensor
+// ULTRASONIC SENSORS
+const int sigPinFront = 10; // Front sensor (trigger/echo)
+const int sigPinRear = 11;  // Rear sensor (trigger/echo)
 
-// IR receiver
+// IR RECEIVER SETUP
 const int irReceiverPin = 12;
-IRrecv irrecv(irReceiverPin);
+IRrecv irrecv(irReceiverPin);  // IR receiver object
 
-// Parameters
-const long distanceThreshold = 20;    // Minimum detection distance (cm)
+// NAVIGATION PARAMETERS
+const long distanceThreshold = 20;    // Minimum obstacle detection distance (cm)
 const unsigned long avoidTurnTime = 600; // Time for 90° turn (ms)
-const unsigned long maxBackTime = 2000;  // Maximum backing time (ms)
-const int MAZE_MEMORY = 5;           // Memory for recent decisions
-const unsigned long ESCAPE_TIME = 3000; // Maximum escape time (ms)
+const unsigned long maxBackTime = 2000;  // Maximum backing duration (ms)
+const int MAZE_MEMORY = 5;           // Size of action history buffer
+const unsigned long ESCAPE_TIME = 3000; // Max time without progress before escape (ms)
 
-// States and modes
+// STATE ENUMERATIONS
 enum RobotState { MOVING, BACKING, TURNING_RIGHT, TURNING_LEFT, STOPPED };
 enum OperationMode { AUTO, MANUAL };
 enum NavAction { FORWARD, BACK, TURN_RIGHT, TURN_LEFT };
 
-// Global variables
-RobotState currentState = MOVING;
-OperationMode currentMode = AUTO;
-NavAction actionHistory[MAZE_MEMORY];
-int actionIndex = 0;
-unsigned long lastProgressTime = 0;
-bool alternateTurn = false;
-bool frontObstacle = false;
-bool rearObstacle = false;
+// GLOBAL VARIABLES
+RobotState currentState = MOVING;     // Current navigation state
+OperationMode currentMode = AUTO;     // Default operation mode
+NavAction actionHistory[MAZE_MEMORY]; // Circular buffer for path memory
+int actionIndex = 0;                  // Pointer for action history
+unsigned long lastProgressTime = 0;   // Timestamp of last forward movement
+bool alternateTurn = false;            // Alternator for turn direction checking
+bool frontObstacle = false;           // Front obstacle detection flag
+bool rearObstacle = false;            // Rear obstacle detection flag
+// Manual control flags
 bool manualForward = false;
 bool manualBackward = false;
 bool manualLeft = false;
 bool manualRight = false;
-unsigned long backStartTime = 0;
-unsigned long lastSensorCheck = 0;
+unsigned long backStartTime = 0;      // Timestamp when backing started
+unsigned long lastSensorCheck = 0;    // Last sensor polling time
 
-// Sensor readings
-long frontDistance = 0;
-long rearDistance = 0;
+// SENSOR READINGS
+long frontDistance = 0;  // Measured front distance (cm)
+long rearDistance = 0;   // Measured rear distance (cm)
 
-// Updated IR codes
-#define IR_BUTTON_1 0xEF10BF00  // switch auto/manual
-#define IR_BUTTON_2 0xEE11BF00  // Forward
-#define IR_BUTTON_4 0xEB14BF00  // Left
-#define IR_BUTTON_5 0xEA15BF00  // OK/Stop
-#define IR_BUTTON_6 0xE916BF00  // Right
-#define IR_BUTTON_8 0xE619BF00  // Reverse
+// IR REMOTE CODES (customized for specific remote)
+#define IR_BUTTON_1 0xEF10BF00  // Toggle auto/manual mode
+#define IR_BUTTON_2 0xEE11BF00  // Manual forward
+#define IR_BUTTON_4 0xEB14BF00  // Manual left turn
+#define IR_BUTTON_5 0xEA15BF00  // Stop/emergency brake
+#define IR_BUTTON_6 0xE916BF00  // Manual right turn
+#define IR_BUTTON_8 0xE619BF00  // Manual reverse
 
 // ============== SENSOR FUNCTIONS ============== //
 
+/**
+ * Measures distance from single-pin ultrasonic sensor
+ * @param trigPin The sensor pin (used for both trigger and echo)
+ * @returns Distance in centimeters (400cm max)
+ */
 long measureDistance(int trigPin) {
-  // Reset sensor
+  // Reset sensor state
   pinMode(trigPin, OUTPUT);
   digitalWrite(trigPin, LOW);
   delayMicroseconds(3);
   
-  // Send pulse
+  // Generate 10μs trigger pulse
   digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);  // Standard pulse width
+  delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
 
-  // Measure response
+  // Measure echo pulse duration with 20ms timeout
   pinMode(trigPin, INPUT);
-  long duration = pulseIn(trigPin, HIGH, 20000);  // 20ms timeout (max 3.4m)
+  long duration = pulseIn(trigPin, HIGH, 20000);
   
-  // Handle timeout
-  if (duration == 0) {
-    return 400; // Return max distance
-  }
+  // Handle timeout (no echo)
+  if (duration == 0) return 400; 
+  
+  // Calculate distance: (duration * speed_of_sound) / 2
+  // 0.0343 cm/μs * duration / 2 * calibration factor 1.255
   float distance_cm = duration * 0.0343 * 1.255 / 2.0;
   return (long)(distance_cm + 0.5); // Round to nearest integer
 }
 
-// Get stable distance reading with filtering
+/**
+ * Gets stable distance reading through averaging
+ * @param pin Sensor pin to read
+ * @returns Averaged distance measurement
+ */
 const int SAMPLE_COUNT = 3;
 long getStableDistance(int pin) {
   long sum = 0;
-  
-  // Take multiple readings
   for(int i = 0; i < SAMPLE_COUNT; i++) {
     sum += measureDistance(pin);
-    delay(10);  // Short delay between readings
+    delay(10);  // Delay between samples
   }
-  
-  // Return average value
-  return sum / SAMPLE_COUNT;
+  return sum / SAMPLE_COUNT; // Return integer average
 }
 
-// ============== MOTOR CONTROL ============== //
+// ============== MOTOR CONTROL FUNCTIONS ============== //
 
+/** Drives all wheels forward (handles inverse right-side logic) */
 void moveForward() {
-  // Front left wheel: forward
+  // Front left wheel forward
   digitalWrite(motor1Pin1, HIGH);
   digitalWrite(motor1Pin2, LOW);
-  
-  // Front right wheel: forward (sentido inverso)
+  // Front right wheel forward (inverse logic)
   digitalWrite(motor2Pin1, LOW);
   digitalWrite(motor2Pin2, HIGH);
-  
-  // Rear left wheel: forward
+  // Rear left wheel forward
   digitalWrite(motor3Pin1, HIGH);
   digitalWrite(motor3Pin2, LOW);
-  
-  // Rear right wheel: forward (sentido inverso)
+  // Rear right wheel forward (inverse logic)
   digitalWrite(motor4Pin1, LOW);
   digitalWrite(motor4Pin2, HIGH);
 }
 
+/** Drives all wheels backward (handles inverse right-side logic) */
 void moveBackward() {
-  // Front left wheel: backward
+  // Front left wheel backward
   digitalWrite(motor1Pin1, LOW);
   digitalWrite(motor1Pin2, HIGH);
-  
-  // Front right wheel: backward (sentido inverso)
+  // Front right wheel backward (inverse logic)
   digitalWrite(motor2Pin1, HIGH);
   digitalWrite(motor2Pin2, LOW);
-  
-  // Rear left wheel: backward
+  // Rear left wheel backward
   digitalWrite(motor3Pin1, LOW);
   digitalWrite(motor3Pin2, HIGH);
-  
-  // Rear right wheel: backward (sentido inverso)
+  // Rear right wheel backward (inverse logic)
   digitalWrite(motor4Pin1, HIGH);
   digitalWrite(motor4Pin2, LOW);
 }
 
+/** Pivot turn right (left wheels forward, right wheels backward) */
 void turnRight() {
-  // Left side: forward
+  // Left side forward
   digitalWrite(motor1Pin1, HIGH);
   digitalWrite(motor1Pin2, LOW);
   digitalWrite(motor3Pin1, HIGH);
   digitalWrite(motor3Pin2, LOW);
-  
-  // Right side: backward
+  // Right side backward
   digitalWrite(motor2Pin1, HIGH);
   digitalWrite(motor2Pin2, LOW);
   digitalWrite(motor4Pin1, HIGH);
   digitalWrite(motor4Pin2, LOW);
 }
 
+/** Pivot turn left (right wheels forward, left wheels backward) */
 void turnLeft() {
-  // Left side: backward
+  // Left side backward
   digitalWrite(motor1Pin1, LOW);
   digitalWrite(motor1Pin2, HIGH);
   digitalWrite(motor3Pin1, LOW);
   digitalWrite(motor3Pin2, HIGH);
-  
-  // Right side: forward
+  // Right side forward
   digitalWrite(motor2Pin1, LOW);
   digitalWrite(motor2Pin2, HIGH);
   digitalWrite(motor4Pin1, LOW);
   digitalWrite(motor4Pin2, HIGH);
 }
 
+/** Cuts power to all motor driver pins */
 void stopMotors() {
   for (int i = 2; i <= 9; i++) {
     digitalWrite(i, LOW);
   }
 }
 
-// ============== LCD & UI FUNCTIONS ============== //
+// ============== LCD INTERFACE FUNCTIONS ============== //
 
+/** Updates LCD display with status and sensor data */
 void updateLCD() {
+  // Clear display
   lcd.setCursor(0, 0);
   lcd.print("                ");
   lcd.setCursor(0, 1);
   lcd.print("                ");
   
-  // First line: display mode and state
+  // Line 1: Display mode and state
   lcd.setCursor(0, 0);
   if (currentMode == AUTO) {
     lcd.print("Auto ");
+    // State abbreviations
     switch (currentState) {
       case MOVING: lcd.print("Mov"); break;
       case BACKING: lcd.print("Bck"); break;
@@ -197,7 +206,7 @@ void updateLCD() {
     lcd.print("Manual");
   }
   
-  // Second line: sensor information
+  // Line 2: Display sensor readings
   lcd.setCursor(0, 1);
   lcd.print("F:");
   lcd.print(frontDistance);
@@ -205,7 +214,7 @@ void updateLCD() {
   lcd.print(rearDistance);
   lcd.print("cm");
   
-  // Obstacle indicators
+  // Obstacle warning indicators
   if (frontObstacle) {
     lcd.setCursor(14, 0);
     lcd.print("F!");
@@ -218,6 +227,7 @@ void updateLCD() {
 
 // ============== SENSOR MANAGEMENT ============== //
 
+/** Polls ultrasonic sensors with staggered timing */
 void checkSensors() {
   static unsigned long lastFrontCheck = 0;
   static unsigned long lastRearCheck = 0;
@@ -238,6 +248,11 @@ void checkSensors() {
 
 // ============== NAVIGATION FUNCTIONS ============== //
 
+/**
+ * Checks for obstacles in specified direction
+ * @param isLeft Set true to check left side, false for right
+ * @returns True if obstacle detected
+ */
 bool checkSide(bool isLeft) {
   if (isLeft) {
     turnLeft();
@@ -247,13 +262,12 @@ bool checkSide(bool isLeft) {
     delay(300);
   }
   
+  // Capture obstacle status
   bool obstacle = frontDistance <= distanceThreshold;
   
-  if (isLeft) {
-    turnRight();
-  } else {
-    turnLeft();
-  }
+  // Return to original orientation
+  if (isLeft) turnRight();
+  else turnLeft();
   delay(300);
   stopMotors();
   
@@ -262,16 +276,16 @@ bool checkSide(bool isLeft) {
 
 // ============== OPERATION MODES ============== //
 
+/** Autonomous navigation state machine */
 void autoMode() {
-  checkSensors();
+  checkSensors(); // Update sensor readings
   
-  // Detect if stuck
+  // Escape handler - triggers when no progress for ESCAPE_TIME
   if (millis() - lastProgressTime > ESCAPE_TIME) {
-    // Follow memorized path backwards
+    // Reverse last 2 actions from history
     int steps = min(actionIndex, 2);
     for (int i = 0; i < steps; i++) {
       NavAction lastAction = actionHistory[(actionIndex - i - 1) % MAZE_MEMORY];
-      
       if (lastAction == TURN_RIGHT) {
         turnLeft();
         delay(avoidTurnTime);
@@ -280,8 +294,7 @@ void autoMode() {
         delay(avoidTurnTime);
       }
     }
-    
-    // Reset memory
+    // Reset navigation memory
     actionIndex = 0;
     lastProgressTime = millis();
     currentState = MOVING;
@@ -301,8 +314,7 @@ void autoMode() {
       break;
       
     case BACKING:
-      // Safety: stop if rear obstacle detected
-      if (rearObstacle) {
+      if (rearObstacle) {  // Safety stop
         stopMotors();
         currentState = STOPPED;
         break;
@@ -312,12 +324,12 @@ void autoMode() {
         moveBackward();
       } else {
         stopMotors();
-        
-        // Check sides alternately
+        // Check both sides (alternating start direction)
         bool tryRight = alternateTurn ? checkSide(false) : checkSide(true);
         bool tryLeft = alternateTurn ? checkSide(true) : checkSide(false);
         alternateTurn = !alternateTurn;
         
+        // Decide turn direction based on availability
         if (!tryRight) {
           currentState = TURNING_RIGHT;
           actionHistory[actionIndex++ % MAZE_MEMORY] = TURN_RIGHT;
@@ -325,7 +337,7 @@ void autoMode() {
           currentState = TURNING_LEFT;
           actionHistory[actionIndex++ % MAZE_MEMORY] = TURN_LEFT;
         } else {
-          // Both sides blocked, try opposite to last turn
+          // Both blocked - use history to decide
           if (actionIndex > 0 && actionHistory[(actionIndex-1) % MAZE_MEMORY] == TURN_RIGHT) {
             currentState = TURNING_LEFT;
             actionHistory[actionIndex++ % MAZE_MEMORY] = TURN_LEFT;
@@ -339,14 +351,13 @@ void autoMode() {
       
     case TURNING_RIGHT:
       turnRight();
-      delay(avoidTurnTime);
+      delay(avoidTurnTime); // Fixed-duration 90° turn
       stopMotors();
       
       checkSensors();
-      if (frontObstacle) {
-        currentState = BACKING;
-        backStartTime = millis();
-      } else {
+      // Re-evaluate path after turn
+      if (frontObstacle) currentState = BACKING;
+      else {
         currentState = MOVING;
         lastProgressTime = millis();
       }
@@ -354,169 +365,136 @@ void autoMode() {
       
     case TURNING_LEFT:
       turnLeft();
-      delay(avoidTurnTime);
+      delay(avoidTurnTime); // Fixed-duration 90° turn
       stopMotors();
       
       checkSensors();
-      if (frontObstacle) {
-        currentState = BACKING;
-        backStartTime = millis();
-      } else {
+      // Re-evaluate path after turn
+      if (frontObstacle) currentState = BACKING;
+      else {
         currentState = MOVING;
         lastProgressTime = millis();
       }
       break;
       
     case STOPPED:
-      // Try to find exit
       checkSensors();
       if (!frontObstacle) {
         currentState = MOVING;
       } else if (!rearObstacle) {
         currentState = BACKING;
-        backStartTime = millis();
       } else {
-        // Random turn to escape
+        // Random escape maneuver
         randomSeed(analogRead(0));
-        if (random(2) == 0) {
-          turnLeft();
-          delay(avoidTurnTime);
-        } else {
-          turnRight();
-          delay(avoidTurnTime);
-        }
+        if (random(2) == 0) turnLeft();
+        else turnRight();
+        delay(avoidTurnTime);
         currentState = MOVING;
       }
       break;
   }
   
-  updateLCD();
+  updateLCD(); // Refresh display
 }
 
+/** Manual IR remote control mode */
 void manualMode() {
-  // Update sensors
+  // Throttled sensor updates
   if (millis() - lastSensorCheck > 200) {
     checkSensors();
     lastSensorCheck = millis();
   }
 
-  // Execute movements
-  if (manualForward) {
-    moveForward();
-  } else if (manualBackward) {
-    moveBackward();
-  } else if (manualLeft) {
-    turnLeft();
-  } else if (manualRight) {
-    turnRight();
-  } else {
-    stopMotors();
-  }
+  // Execute movement based on button flags
+  if (manualForward) moveForward();
+  else if (manualBackward) moveBackward();
+  else if (manualLeft) turnLeft();
+  else if (manualRight) turnRight();
+  else stopMotors();
   
   updateLCD();
 }
 
-// ============== IR CONTROL ============== //
+// ============== IR CONTROL SYSTEM ============== //
 
+/** Decodes IR signals and controls mode/operation */
 void processIR() {
   if (irrecv.decode()) {
     unsigned long irValue = irrecv.decodedIRData.decodedRawData;
     
-    // Button 1: Toggle AUTO/MANUAL
+    // Button 1: Mode toggle
     if (irValue == IR_BUTTON_1) {
       currentMode = (currentMode == AUTO) ? MANUAL : AUTO;
-      // Reset controls
-      manualForward = false;
-      manualBackward = false;
-      manualLeft = false;
-      manualRight = false;
+      // Reset manual controls
+      manualForward = manualBackward = manualLeft = manualRight = false;
       stopMotors();
     }
     
-    // Manual mode specific commands
+    // Manual mode commands
     if (currentMode == MANUAL) {
       switch (irValue) {
         case IR_BUTTON_2: // Forward
           manualForward = true;
-          manualBackward = false;
-          manualLeft = false;
-          manualRight = false;
+          manualBackward = manualLeft = manualRight = false;
           break;
-          
         case IR_BUTTON_8: // Reverse
-          manualForward = false;
           manualBackward = true;
-          manualLeft = false;
-          manualRight = false;
+          manualForward = manualLeft = manualRight = false;
           break;
-          
         case IR_BUTTON_4: // Left
-          manualForward = false;
-          manualBackward = false;
           manualLeft = true;
-          manualRight = false;
+          manualForward = manualBackward = manualRight = false;
           break;
-          
         case IR_BUTTON_6: // Right
-          manualForward = false;
-          manualBackward = false;
-          manualLeft = false;
           manualRight = true;
+          manualForward = manualBackward = manualLeft = false;
           break;
-          
-        case IR_BUTTON_5: // Emergency stop
-          manualForward = false;
-          manualBackward = false;
-          manualLeft = false;
-          manualRight = false;
+        case IR_BUTTON_5: // Stop
+          manualForward = manualBackward = manualLeft = manualRight = false;
           stopMotors();
           break;
       }
     }
     
-    irrecv.resume();
+    irrecv.resume(); // Prepare for next signal
   }
 }
 
 // ============== MAIN PROGRAM ============== //
 
 void setup() {
-  // Initialize LCD
+  // LCD initialization
   lcd.begin(16, 2);
   lcd.clear();
-  lcd.setCursor(2, 0);
-  lcd.print("UltrasonicBot");
+  lcd.print("UltrasonicBot"); // Splash screen
   updateLCD();
 
-  // Configure motor pins
+  // Configure motor pins as outputs
   for (int i = 2; i <= 9; i++) {
     pinMode(i, OUTPUT);
     digitalWrite(i, LOW);
   }
 
-  // Configure ultrasonic sensors
+  // Initialize ultrasonic pins
   pinMode(sigPinFront, OUTPUT);
   pinMode(sigPinRear, OUTPUT);
   
   // Start IR receiver
   irrecv.enableIRIn();
-  irrecv.blink13(false);  // Disable LED blinking when receiving signal
+  irrecv.blink13(false); // Disable built-in LED blinking
   
-  // Initialize navigation memory
+  // Initialize navigation history
   for (int i = 0; i < MAZE_MEMORY; i++) {
     actionHistory[i] = FORWARD;
   }
 }
 
 void loop() {
-  processIR();
+  processIR(); // Handle incoming IR signals
   
-  if (currentMode == AUTO) {
-    autoMode();
-  } else {
-    manualMode();
-  }
+  // Execute appropriate mode handler
+  if (currentMode == AUTO) autoMode();
+  else manualMode();
   
-  // Small delay for stability
-  delay(25);
+  delay(25); // Main loop throttle
 }
